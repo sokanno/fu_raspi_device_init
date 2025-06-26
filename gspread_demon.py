@@ -1,14 +1,29 @@
 import re
+import time               # ← 追加
+import socket             # ← 追加
 import paho.mqtt.client as mqtt
 import gspread
 from google.oauth2.service_account import Credentials
+
+def wait_for_broker(host="localhost", port=1883, timeout=10):
+    """MQTT ブローカーが開くまで最大 timeout 秒待つ"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), 2):
+                return True      # 接続成功＝ブローカー稼働
+        except OSError:
+            time.sleep(1)
+    raise RuntimeError(f"MQTT broker {host}:{port} not available")
 
 # Google Sheets 読み取り用関数
 def get_sheets_values():
     """
     Googleスプレッドシートから値(A1:D75)を取得して返す。
     """
-    credential_path = "/home/pi/credential.json"
+    # credential_path = "credential.json"
+    credential_path = "/Users/fu/device_init/fu_raspi_device_init/credential.json"
+
     SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
     credentials = Credentials.from_service_account_file(credential_path, scopes=SCOPES)
@@ -75,13 +90,14 @@ def main():
         device_data[mac] = {"id": dev_id, "x": x, "y": y, "connected": False}
 
     # 2) MQTT クライアント設定
-    broker, port, keepalive = "192.168.1.238", 1883, 60
+    broker, port, keepalive = "192.168.1.2", 1883, 60
     client = mqtt.Client(protocol=mqtt.MQTTv311, userdata={"device_data": device_data})
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
 
     print("Connecting to MQTT broker...")
+    wait_for_broker(broker, port) 
     client.connect(broker, port, keepalive)
 
     try:
