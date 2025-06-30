@@ -19,7 +19,7 @@ def wait_for_broker(host="localhost", port=1883, timeout=10):
 # Google Sheets 読み取り用関数
 def get_sheets_values():
     """
-    Googleスプレッドシートから値(A1:D75)を取得して返す。
+    Googleスプレッドシートから値(A1:E75)を取得して返す。
     """
     # credential_path = "credential.json"
     credential_path = "/Users/fu/device_init/fu_raspi_device_init/credential.json"
@@ -33,7 +33,7 @@ def get_sheets_values():
     sheet = client.open_by_key(SPREADSHEET_KEY)
 
     worksheet = sheet.worksheet("Sheet1")
-    values = worksheet.get("A1:D76")
+    values = worksheet.get("A1:E76")  # E列まで読み取り
 
     return values
 
@@ -55,9 +55,15 @@ def on_message(client, userdata, msg):
     device_data = userdata["device_data"]
     if mac_address in device_data:
         info = device_data[mac_address]
+        
+        # idxy + ラジアン値の配信
         response = f"{info['id']},{info['x']},{info['y']}"
+        if 'h_enc' in info and info['h_enc']:
+            response += f",{info['h_enc']}"
+        
         client.publish(f"{mac_address}/idxy", response, qos=1)
         print(f"Published => {mac_address}/idxy : {response}")
+        
         info["connected"] = True
     else:
         print(f"Unknown MAC: {mac_address}")
@@ -86,8 +92,36 @@ def main():
     for row in rows[1:]:
         if len(row) < 4:
             continue
+        
         mac, dev_id, x, y = row[0], row[1], row[2], row[3]
-        device_data[mac] = {"id": dev_id, "x": x, "y": y, "connected": False}
+        
+        # E列（horizontalEncoderValue）の処理 - ラジアン値として処理
+        h_enc = None
+        if len(row) > 4 and row[4]:
+            try:
+                # 文字列から数値に変換し、小数点以下2桁でフォーマット
+                radian_value = float(row[4])
+                # 0.00～6.28の範囲チェック
+                if 0.00 <= radian_value <= 6.28:
+                    h_enc = f"{radian_value:.2f}"
+                else:
+                    print(f"Warning: h_enc value {radian_value} for MAC {mac} is out of range (0.00-6.28)")
+            except ValueError:
+                print(f"Warning: Invalid h_enc value '{row[4]}' for MAC {mac}")
+                h_enc = None
+        
+        device_data[mac] = {
+            "id": dev_id, 
+            "x": x, 
+            "y": y, 
+            "h_enc": h_enc,
+            "connected": False
+        }
+
+    # デバイスデータの確認用出力
+    print("Loaded device data:")
+    for mac, data in device_data.items():
+        print(f"  {mac}: id={data['id']}, x={data['x']}, y={data['y']}, h_enc={data['h_enc']}")
 
     # 2) MQTT クライアント設定
     broker, port, keepalive = "192.168.1.2", 1883, 60
