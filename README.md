@@ -1,0 +1,2 @@
+python mqtt_gspread.py
+このファイルがspreadsheetを読み込むやつなのでこいつを実行してください。
